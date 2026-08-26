@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Gerador de QR Code Trollagem</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #1e1e2f;
+    color: #f5f5f5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+  }
+  h1 { color: #ffcc00; text-align: center; }
+  .container {
+    background: #2b2b40;
+    padding: 24px;
+    border-radius: 12px;
+    max-width: 480px;
+    width: 100%;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  }
+  label { display: block; margin-top: 14px; margin-bottom: 6px; font-size: 14px; }
+  input, select {
+    width: 100%;
+    padding: 10px;
+    border-radius: 6px;
+    border: none;
+    box-sizing: border-box;
+    font-size: 14px;
+  }
+  .tabs { display: flex; gap: 8px; margin-top: 10px; }
+  .tab-btn {
+    flex: 1;
+    padding: 10px;
+    background: #3a3a55;
+    color: #f5f5f5;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  .tab-btn.active { background: #ffcc00; color: #1e1e2f; font-weight: bold; }
+  .tab-content { display: none; margin-top: 14px; }
+  .tab-content.active { display: block; }
+  button.gerar {
+    margin-top: 18px;
+    width: 100%;
+    padding: 12px;
+    background: #ffcc00;
+    color: #1e1e2f;
+    font-weight: bold;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 15px;
+  }
+  button.gerar:hover { background: #ffd633; }
+  button.baixar {
+    margin-top: 10px;
+    width: 100%;
+    padding: 12px;
+    background: #4caf50;
+    color: white;
+    font-weight: bold;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 15px;
+    display: none;
+  }
+  #qrcode {
+    margin-top: 24px;
+    display: flex;
+    justify-content: center;
+    background: white;
+    padding: 16px;
+    border-radius: 8px;
+  }
+  .hint { font-size: 12px; color: #aaa; margin-top: 6px; }
+  .preview-link { margin-top: 14px; font-size: 13px; color: #7dc4ff; word-break: break-all; text-align: center; }
+  #fotoPreview { margin-top: 10px; max-width: 100%; border-radius: 6px; display: none; }
+  #status { font-size: 12px; margin-top: 8px; color: #ffcc00; min-height: 16px; }
+</style>
+</head>
+<body>
+
+<h1>🃏 Gerador de QR Code Trollagem</h1>
+
+<div class="container">
+
+  <div class="tabs">
+    <button class="tab-btn active" id="tabLinkBtn" onclick="mudarAba('link')">Link de imagem</button>
+    <button class="tab-btn" id="tabFotoBtn" onclick="mudarAba('foto')">Enviar minha foto</button>
+  </div>
+
+  <div class="tab-content active" id="tabLink">
+    <label for="imgUrl">Cole o link da imagem/gif engraçado</label>
+    <input type="text" id="imgUrl" placeholder="https://exemplo.com/imagem-engracada.gif">
+    <div class="hint">Pegue o link direto de uma imagem hospedada (Imgur, Giphy, Tenor, etc). Clique com botão direito na imagem &gt; "Copiar endereço da imagem".</div>
+  </div>
+
+  <div class="tab-content" id="tabFoto">
+    <label for="fotoInput">Escolha uma foto do seu celular</label>
+    <input type="file" id="fotoInput" accept="image/*" onchange="processarFoto(event)">
+    <div class="hint">A foto fica guardada dentro do próprio QR Code, sem precisar subir pra nenhum site. Por isso ela é comprimida bastante — funciona melhor com fotos simples e engraçadas, tipo memes.</div>
+    <img id="fotoPreview">
+    <div id="status"></div>
+  </div>
+
+  <button class="gerar" onclick="gerarQR()">Gerar QR Code</button>
+  <button class="baixar" id="btnBaixar" onclick="baixarQR()">⬇️ Baixar QR Code</button>
+
+  <div id="qrcode"></div>
+  <div class="preview-link" id="previewLink"></div>
+</div>
+
+<script>
+let qr = null;
+let fotoDataUrl = null;
+
+function mudarAba(aba) {
+  document.getElementById('tabLink').classList.toggle('active', aba === 'link');
+  document.getElementById('tabFoto').classList.toggle('active', aba === 'foto');
+  document.getElementById('tabLinkBtn').classList.toggle('active', aba === 'link');
+  document.getElementById('tabFotoBtn').classList.toggle('active', aba === 'foto');
+}
+
+function processarFoto(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const status = document.getElementById('status');
+  status.textContent = 'Comprimindo foto...';
+  fotoDataUrl = null;
+
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      comprimirAteCaber(img, status);
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function comprimirAteCaber(img, status) {
+  const LIMITE_BYTES = 2200;
+  let tamanho = 140;
+  let qualidade = 0.6;
+  let tentativas = 0;
+  let resultado = null;
+
+  while (tentativas < 12) {
+    const canvas = document.createElement('canvas');
+    const escala = Math.min(1, tamanho / Math.max(img.width, img.height));
+    canvas.width = Math.round(img.width * escala);
+    canvas.height = Math.round(img.height * escala);
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const dataUrl = canvas.toDataURL('image/jpeg', qualidade);
+
+    if (dataUrl.length <= LIMITE_BYTES) {
+      resultado = dataUrl;
+      break;
+    }
+
+    if (qualidade > 0.25) {
+      qualidade -= 0.1;
+    } else {
+      tamanho = Math.round(tamanho * 0.8);
+    }
+    tentativas++;
+  }
+
+  const preview = document.getElementById('fotoPreview');
+
+  if (resultado) {
+    fotoDataUrl = resultado;
+    preview.src = resultado;
+    preview.style.display = 'block';
+    status.textContent = 'Foto pronta (' + Math.round(resultado.length / 1024) + ' KB dentro do QR).';
+    status.style.color = '#7dff9e';
+  } else {
+    fotoDataUrl = null;
+    preview.style.display = 'none';
+    status.textContent = 'Essa foto é grande/detalhada demais pra caber num QR Code. Tente uma foto mais simples, ou use a aba "Link de imagem" com a foto hospedada em algum site.';
+    status.style.color = '#ff8080';
+  }
+}
+
+function gerarQR() {
+  const abaFoto = document.getElementById('tabFoto').classList.contains('active');
+  const container = document.getElementById('qrcode');
+  const previewLink = document.getElementById('previewLink');
+
+  let conteudo = '';
+
+  if (abaFoto) {
+    if (!fotoDataUrl) {
+      alert('Escolha uma foto primeiro (e espere ela terminar de comprimir).');
+      return;
+    }
+    conteudo = fotoDataUrl;
+  } else {
+    conteudo = document.getElementById('imgUrl').value.trim();
+    if (!conteudo) {
+      alert('Cole um link de imagem primeiro!');
+      return;
+    }
+  }
+
+  container.innerHTML = '';
+  try {
+    qr = new QRCode(container, {
+      text: conteudo,
+      width: 240,
+      height: 240,
+      colorDark: "#000000",
+      colorLight: "#ffffff",
+      correctLevel: QRCode.CorrectLevel.L
+    });
+  } catch (err) {
+    alert('Não deu pra gerar o QR Code: o conteúdo é grande demais. Tente uma foto menor ou use um link.');
+    return;
+  }
+
+  previewLink.innerHTML = abaFoto
+    ? 'Ao escanear, a foto abre direto (guardada no próprio QR).'
+    : 'Ao escanear, abre: ' + conteudo;
+
+  document.getElementById('btnBaixar').style.display = 'block';
+}
+
+function baixarQR() {
+  const canvas = document.querySelector('#qrcode canvas');
+  if (!canvas) {
+    alert('Gere o QR Code primeiro!');
+    return;
+  }
+  const link = document.createElement('a');
+  link.download = 'qrcode-trollagem.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+</script>
+
+</body>
+</html>
